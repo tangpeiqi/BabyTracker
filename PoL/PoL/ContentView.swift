@@ -21,6 +21,7 @@ struct ContentView: View {
                     statusRow("Camera Permission", wearablesManager.cameraPermissionText)
                     statusRow("Connected Devices", "\(wearablesManager.connectedDeviceCount)")
                     statusRow("Stream State", wearablesManager.streamStateText)
+                    statusRow("MWDAT Config", wearablesManager.configSummary)
 
                     if let callbackDate = wearablesManager.lastCallbackHandledAt {
                         statusRow("Last Callback", callbackDate.formatted(date: .abbreviated, time: .standard))
@@ -38,12 +39,16 @@ struct ContentView: View {
 
                 Section("Registration") {
                     Button("Start Registration") {
-                        wearablesManager.startRegistration()
+                        Task {
+                            await wearablesManager.startRegistration()
+                        }
                     }
                     .disabled(wearablesManager.isBusy)
 
                     Button("Start Unregistration", role: .destructive) {
-                        wearablesManager.startUnregistration()
+                        Task {
+                            await wearablesManager.startUnregistration()
+                        }
                     }
                     .disabled(wearablesManager.isBusy)
                 }
@@ -83,6 +88,61 @@ struct ContentView: View {
                         wearablesManager.capturePhoto()
                     }
                     .disabled(wearablesManager.isBusy || !wearablesManager.isStreaming)
+                }
+
+                Section("Button Probe (Debug)") {
+                    statusRow(
+                        "Button-Like Event",
+                        wearablesManager.buttonLikeEventDetected ? "detected" : "not detected"
+                    )
+
+                    Button("Mark Manual Glasses Press") {
+                        wearablesManager.markManualButtonPress()
+                    }
+
+                    Button("Clear Probe Log", role: .destructive) {
+                        wearablesManager.clearDebugEvents()
+                    }
+
+                    if wearablesManager.debugEvents.isEmpty {
+                        Text("No wearable events logged yet.")
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(wearablesManager.debugEvents) { event in
+                            VStack(alignment: .leading, spacing: 4) {
+                                HStack {
+                                    Text(event.name)
+                                        .font(.subheadline)
+                                        .fontWeight(.semibold)
+                                    if event.isManualMarker {
+                                        Text("Manual Marker")
+                                            .font(.caption2)
+                                            .padding(.horizontal, 6)
+                                            .padding(.vertical, 2)
+                                            .background(.blue.opacity(0.15))
+                                            .clipShape(Capsule())
+                                    } else if event.isButtonLike {
+                                        Text("Button-Like")
+                                            .font(.caption2)
+                                            .padding(.horizontal, 6)
+                                            .padding(.vertical, 2)
+                                            .background(.orange.opacity(0.2))
+                                            .clipShape(Capsule())
+                                    }
+                                    Spacer()
+                                    Text(event.timestamp.formatted(date: .omitted, time: .standard))
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                                if !event.metadata.isEmpty {
+                                    Text(formatDebugMetadata(event.metadata))
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            .padding(.vertical, 2)
+                        }
+                    }
                 }
 
                 if let frame = wearablesManager.latestFrame {
@@ -146,6 +206,13 @@ struct ContentView: View {
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.trailing)
         }
+    }
+
+    private func formatDebugMetadata(_ metadata: [String: String]) -> String {
+        metadata
+            .sorted(by: { $0.key < $1.key })
+            .map { "\($0.key)=\($0.value)" }
+            .joined(separator: ", ")
     }
 }
 

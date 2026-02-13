@@ -4,6 +4,25 @@ Baby Activity Tracker (Ray-Ban Meta Gen 2 + iPhone): Finalized Plan v3 (Persist 
 ## Summary
 Updated per your requirement: `other` is now persisted in logs (not discarded), shown inline in timeline, and can be edited or deleted later.
 
+## Validated Device Interaction Facts (2026-02-12)
+- Before streaming starts, physical button and touch pad interactions are handled by Meta AI app settings, not by this app.
+- Starting streaming must be triggered by an in-app UI button.
+- After streaming starts, single tap on the temple touch pad pauses/resumes streaming.
+- Swiping on the touch pad changes audio volume.
+- After streaming starts, pressing the physical capture button has no effect for this app integration.
+
+## Interaction Flow Requirements (Updated)
+- Rename `DAT Debug` screen to `Settings`.
+- Keep `Start Streaming` button in `Settings`.
+- After `Start Streaming`, show helper text: `Tap once on the glasses touch pad to get ready.`
+- Add bottom navigation with two tabs: `Settings` and `Activities`.
+- User moves to `Activities` tab during childcare flow.
+- In `Activities`, user single-taps temple touch pad to resume streaming when activity starts.
+- User single-taps again to pause when activity ends.
+- When app is on `Activities` tab and a pause is detected, app sends the segment from last resume to last pause (video + audio) to inference.
+- AI returns activity label.
+- App logs inferred activity event to timeline.
+
 ## Key Change From v2
 - Previous rule: discard `other`.
 - New rule: save `other` as first-class timeline event with badge + edit/delete actions.

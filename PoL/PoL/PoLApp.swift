@@ -16,9 +16,9 @@ struct PoLApp: App {
         WindowGroup {
             ContentView()
                 .environmentObject(wearablesManager)
-        }
-        .onOpenURL { url in
-            wearablesManager.handleIncomingURL(url)
+                .onOpenURL { url in
+                    wearablesManager.handleIncomingURL(url)
+                }
         }
         .modelContainer(for: ActivityEventRecord.self)
     }

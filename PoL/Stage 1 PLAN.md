@@ -11,6 +11,25 @@ Stage 0 proves end-to-end feasibility and physical-button behavior. Stage 1 prod
 4. Local-first persistence for activity logs and media metadata.
 5. Auto-save inferred events, allow user edits/deletes later.
 
+### Validated Device Interaction Facts (2026-02-12)
+1. Before streaming starts, physical button and touch pad interactions map to Meta AI app settings, not this app.
+2. Start streaming must be triggered by an in-app UI button.
+3. After streaming starts, single tap on temple touch pad pauses/resumes streaming.
+4. Swiping on the touch pad changes audio volume.
+5. After streaming starts, pressing the physical capture button does not trigger capture for this app integration.
+
+### Stage 1 Interaction Flow Requirements (Updated)
+1. Rename the current `DAT Debug` screen to `Settings`.
+2. Keep `Start Streaming` in `Settings`.
+3. After user starts streaming, show guidance text: `Tap once on the glasses touch pad to get ready.`
+4. Add bottom tab navigation: `Settings` and `Activities`.
+5. User switches to `Activities` tab during daily baby care.
+6. User single-taps touch pad to resume streaming when an activity starts.
+7. User single-taps touch pad again to pause when activity ends.
+8. While app is on `Activities`, each pause event triggers segment extraction from last resume to last pause.
+9. App sends that extracted video+audio segment to inference.
+10. App maps inference result to activity label and logs event in timeline.
+
 ### Architecture Foundation (End-to-End)
 1. `WearablesSessionLayer`
 - Owns DAT registration, permission, device discovery, and session lifecycle (`RUNNING/PAUSED/STOPPED`).
@@ -56,26 +75,11 @@ Stage 0 proves end-to-end feasibility and physical-button behavior. Stage 1 prod
 7. `protocol InferenceClient { infer(from capture: CaptureEnvelope) async throws -> InferenceResult }`
 8. `protocol ActivityStore { saveEvent(); fetchTimeline(); updateEvent(); softDeleteEvent() }`
 
-### Physical Capture Button Feasibility Plan
-Current known SDK behavior from local docs:
-1. Explicit app API exists for photo capture (`capturePhoto`).
-2. Device/session state can change via tap/hinge/wear actions.
-3. Docs do not yet guarantee a dedicated “capture button pressed” callback in our app layer.
-
-Stage 0 spike to make this decision concrete:
-1. Instrument session and media publishers with timestamped logs.
-2. Test matrix on real glasses:
-- Press capture button once.
-- Press-and-hold.
-- Tap gestures.
-- Session running vs paused.
-3. Record observed outcomes:
-- Does button generate media event directly?
-- Does it only affect session state?
-- Is app-triggered capture required?
-4. Lock behavior:
-- If direct media event exists, bind to pipeline ingestion.
-- If not, use app-side capture controls as primary, and treat physical actions only as lifecycle signals.
+### Physical Capture Button Feasibility (Resolved)
+1. Feasibility probe completed on real device with event logs.
+2. No dedicated app callback observed for physical capture button press.
+3. Temple touch-pad tap is usable as session pause/resume signal after stream starts.
+4. Integration decision: use app-triggered stream start + touch-pad pause/resume driven capture windows; do not depend on physical capture button.
 
 ### Stage 0 Deliverables (Feasibility + Contracts)
 1. DAT integration skeleton in app with registration/permission/session lifecycle visible in debug UI.
@@ -85,15 +89,21 @@ Stage 0 spike to make this decision concrete:
 5. Physical-button feasibility report from test matrix with go/no-go decision.
 
 ### Stage 1 Deliverables (MVP Reliability)
-1. Add short video and audio snippet ingestion paths.
-2. Auto-inference queue with retry/backoff and failure status.
-3. Confidence policy:
+1. Implement `Settings` screen rename and interaction guidance text under `Start Streaming`.
+2. Add `Settings` and `Activities` tab navigation and move timeline-first workflow to `Activities`.
+3. Implement segment capture boundaries from session state transitions:
+- Start segment on resume (`paused -> streaming`).
+- End segment on pause (`streaming -> paused`).
+- Trigger inference on each ended segment while app is on `Activities`.
+4. Implement video+audio segment packaging from last resume to last pause and ingestion path to inference.
+5. Auto-inference queue with retry/backoff and failure status.
+6. Confidence policy:
 - Save all inferred events.
 - `needsReview = true` below threshold.
-4. Full timeline editing:
+7. Full timeline editing:
 - Relabel any event (including `other`).
 - Delete/restore behavior.
-5. Basic analytics/debug screen:
+8. Basic analytics/debug screen:
 - capture success rate
 - inference success/failure counts
 - average processing latency
@@ -107,12 +117,12 @@ Stage 0 spike to make this decision concrete:
 
 2. Integration tests
 - DAT session state transitions handled correctly.
-- Photo capture -> inference -> event save round trip.
+- Segment (`resume -> pause`) capture -> inference -> event save round trip.
 - Retry logic on model call timeout/network failure.
 
 3. Manual real-device tests
 - Registration and permission flow through Meta AI app callback.
-- Event-driven capture for photo/video/audio.
+- Event-driven `resume -> pause` segment capture from touch-pad gestures.
 - Physical button matrix validation.
 - Timeline edit/relabel/delete correctness.
 
@@ -129,3 +139,4 @@ Stage 0 spike to make this decision concrete:
 3. Event-driven capture is default to control battery/cost.
 4. DAT SDK docs in `/Users/peiqitang/Documents/GitHub/BabyTracker/PoL/SDK docs.md` are source of truth for current integration surface.
 5. If physical capture button is not directly exposable as an app callback, app-triggered capture remains canonical and architecture stays unchanged.
+6. Pause/resume transition signals from DAT are treated as capture boundaries for segment extraction.
