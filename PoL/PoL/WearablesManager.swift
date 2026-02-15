@@ -1,3 +1,4 @@
+import AVFoundation
 import Combine
 import Foundation
 import MWDATCamera
@@ -46,6 +47,7 @@ final class WearablesManager: ObservableObject {
     private var activeSegmentStartedAt: Date?
     private let debugEventLimit: Int = 60
     private let segmentRecorder = LocalVideoSegmentRecorder()
+    private let audioRecorder = AudioSegmentRecorder()
 
     init(autoConfigure: Bool = true) {
         configSummary = readMWDATConfigSummary()
@@ -296,6 +298,7 @@ final class WearablesManager: ObservableObject {
         }
         activeSegmentID = nil
         activeSegmentStartedAt = nil
+        audioRecorder.discardActiveSegment()
         await segmentRecorder.discardActiveSegment()
         streamSession = nil
         streamStateToken = nil
@@ -422,10 +425,12 @@ final class WearablesManager: ObservableObject {
             do {
                 guard activeSegmentID == segmentID else { return }
                 try await segmentRecorder.startSegment(id: segmentID, startedAt: startedAt)
+                await startOptionalAudioCapture(for: segmentID)
             } catch {
                 if activeSegmentID == segmentID {
                     activeSegmentID = nil
                     activeSegmentStartedAt = nil
+                    audioRecorder.discardActiveSegment()
                 }
                 lastError = formatError("Failed to start segment recording", error)
                 recordDebugEvent(
@@ -449,7 +454,12 @@ final class WearablesManager: ObservableObject {
 
         Task {
             do {
-                guard let persisted = try await segmentRecorder.endSegment(id: segmentID, endedAt: endedAt) else {
+                let audioMetadata = finalizeAudioCapture(for: segmentID)
+                guard let persisted = try await segmentRecorder.endSegment(
+                    id: segmentID,
+                    endedAt: endedAt,
+                    audioMetadata: audioMetadata
+                ) else {
                     recordDebugEvent(
                         "segment_end_missing",
                         metadata: ["segmentId": segmentID.uuidString]
@@ -465,6 +475,8 @@ final class WearablesManager: ObservableObject {
                     metadata: [
                         "segmentId": persisted.id.uuidString,
                         "frames": "\(persisted.frameCount)",
+                        "audioIncluded": audioMetadata.included ? "true" : "false",
+                        "audioStatus": audioMetadata.status,
                         "elapsedSec": String(format: "%.2f", elapsed),
                         "manifest": persisted.manifestURL.lastPathComponent
                     ]
@@ -519,6 +531,64 @@ final class WearablesManager: ObservableObject {
         }
     }
 
+    private func startOptionalAudioCapture(for segmentID: UUID) async {
+        guard isActivitiesTabActive else {
+            recordDebugEvent(
+                "audio_start_skipped",
+                metadata: ["segmentId": segmentID.uuidString, "reason": "not_activities_tab"]
+            )
+            return
+        }
+
+        let wearablesMicGranted = await ensureWearablesMicrophonePermission()
+        guard wearablesMicGranted else {
+            recordDebugEvent(
+                "audio_start_skipped",
+                metadata: ["segmentId": segmentID.uuidString, "reason": "wearables_mic_permission_denied"]
+            )
+            return
+        }
+
+        let iosMicGranted = await requestIOSMicrophonePermissionIfNeeded()
+        guard iosMicGranted else {
+            recordDebugEvent(
+                "audio_start_skipped",
+                metadata: ["segmentId": segmentID.uuidString, "reason": "ios_mic_permission_denied"]
+            )
+            return
+        }
+
+        do {
+            let route = try audioRecorder.startSegment(segmentID: segmentID)
+            recordDebugEvent(
+                "audio_start",
+                metadata: ["segmentId": segmentID.uuidString, "route": route]
+            )
+        } catch {
+            recordDebugEvent(
+                "audio_start_error",
+                metadata: ["segmentId": segmentID.uuidString, "error": error.localizedDescription]
+            )
+        }
+    }
+
+    private func finalizeAudioCapture(for segmentID: UUID) -> SegmentAudioMetadata {
+        let metadata = audioRecorder.stopSegment(segmentID: segmentID)
+        var eventMetadata: [String: String] = [
+            "segmentId": segmentID.uuidString,
+            "status": metadata.status,
+            "included": metadata.included ? "true" : "false"
+        ]
+        if let durationMillis = metadata.durationMillis {
+            eventMetadata["durationMs"] = "\(durationMillis)"
+        }
+        if let bytes = metadata.bytes {
+            eventMetadata["bytes"] = "\(bytes)"
+        }
+        recordDebugEvent("audio_stop", metadata: eventMetadata)
+        return metadata
+    }
+
     private func recordDebugEvent(
         _ name: String,
         metadata: [String: String] = [:],
@@ -543,6 +613,41 @@ final class WearablesManager: ObservableObject {
 
     private func isPermissionGranted(_ status: PermissionStatus) -> Bool {
         isPermissionGrantedText(String(describing: status))
+    }
+
+    private func ensureWearablesMicrophonePermission() async -> Bool {
+        do {
+            let status = try await Wearables.shared.checkPermissionStatus(.microphone)
+            if isPermissionGranted(status) {
+                return true
+            }
+            let requested = try await Wearables.shared.requestPermission(.microphone)
+            return isPermissionGranted(requested)
+        } catch {
+            recordDebugEvent(
+                "wearables_mic_permission_error",
+                metadata: ["error": error.localizedDescription]
+            )
+            return false
+        }
+    }
+
+    private func requestIOSMicrophonePermissionIfNeeded() async -> Bool {
+        let session = AVAudioSession.sharedInstance()
+        switch session.recordPermission {
+        case .granted:
+            return true
+        case .denied:
+            return false
+        case .undetermined:
+            return await withCheckedContinuation { continuation in
+                session.requestRecordPermission { granted in
+                    continuation.resume(returning: granted)
+                }
+            }
+        @unknown default:
+            return false
+        }
     }
 
     private func isPermissionGrantedText(_ text: String) -> Bool {

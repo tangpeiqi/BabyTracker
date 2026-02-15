@@ -20,6 +20,30 @@ struct PersistedVideoSegment: Sendable {
     let frameCount: Int
 }
 
+struct SegmentAudioMetadata: Sendable {
+    let included: Bool
+    let status: String
+    let note: String
+    let localFileName: String?
+    let sampleRateHz: Int?
+    let channels: Int?
+    let durationMillis: Int?
+    let bytes: Int?
+
+    static func missing(status: String, note: String) -> SegmentAudioMetadata {
+        SegmentAudioMetadata(
+            included: false,
+            status: status,
+            note: note,
+            localFileName: nil,
+            sampleRateHz: nil,
+            channels: nil,
+            durationMillis: nil,
+            bytes: nil
+        )
+    }
+}
+
 actor LocalVideoSegmentRecorder {
     private struct ActiveSegment {
         let id: UUID
@@ -31,10 +55,15 @@ actor LocalVideoSegmentRecorder {
     }
 
     private struct SegmentManifest: Codable {
-        struct AudioPlaceholder: Codable {
+        struct AudioDescriptor: Codable {
             let included: Bool
             let status: String
             let note: String
+            let localFileName: String?
+            let sampleRateHz: Int?
+            let channels: Int?
+            let durationMillis: Int?
+            let bytes: Int?
         }
 
         let segmentId: UUID
@@ -44,7 +73,7 @@ actor LocalVideoSegmentRecorder {
         let endedAt: Date
         let frameCount: Int
         let framesDirectory: String
-        let audio: AudioPlaceholder
+        let audio: AudioDescriptor
     }
 
     private let baseDirectoryURL: URL
@@ -95,7 +124,11 @@ actor LocalVideoSegmentRecorder {
         activeSegment = segment
     }
 
-    func endSegment(id: UUID, endedAt: Date) throws -> PersistedVideoSegment? {
+    func endSegment(
+        id: UUID,
+        endedAt: Date,
+        audioMetadata: SegmentAudioMetadata
+    ) throws -> PersistedVideoSegment? {
         guard let segment = activeSegment, segment.id == id else { return nil }
         activeSegment = nil
 
@@ -108,9 +141,14 @@ actor LocalVideoSegmentRecorder {
             frameCount: segment.frameCount,
             framesDirectory: "frames",
             audio: .init(
-                included: false,
-                status: "placeholder",
-                note: "Audio metadata not captured yet."
+                included: audioMetadata.included,
+                status: audioMetadata.status,
+                note: audioMetadata.note,
+                localFileName: audioMetadata.localFileName,
+                sampleRateHz: audioMetadata.sampleRateHz,
+                channels: audioMetadata.channels,
+                durationMillis: audioMetadata.durationMillis,
+                bytes: audioMetadata.bytes
             )
         )
         let manifestURL = segment.directoryURL.appendingPathComponent("segment_manifest.json")
