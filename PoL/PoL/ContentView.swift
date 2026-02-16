@@ -10,6 +10,7 @@ import SwiftData
 
 struct ContentView: View {
     private enum AppTab: Hashable {
+        case summary
         case settings
         case activities
     }
@@ -17,12 +18,91 @@ struct ContentView: View {
     @EnvironmentObject private var wearablesManager: WearablesManager
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \ActivityEventRecord.timestamp, order: .reverse) private var timelineEvents: [ActivityEventRecord]
-    @State private var selectedTab: AppTab = .settings
+    @State private var selectedTab: AppTab = .summary
 
     var body: some View {
         TabView(selection: $selectedTab) {
             NavigationStack {
                 Form {
+                    Section {
+                        Text("Summary dashboard is coming next.")
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Section("Quick Stats") {
+                        let visibleEvents = timelineEvents.filter { !$0.isDeleted }
+                        statusRow("Total Events", "\(visibleEvents.count)")
+                        statusRow("Stream State", wearablesManager.streamStateText)
+                    }
+                }
+                .navigationTitle("Summary")
+            }
+            .tabItem {
+                Label("Summary", systemImage: "chart.bar")
+            }
+            .tag(AppTab.summary)
+
+            NavigationStack {
+                Form {
+                    Section {
+                        statusRow("Stream State", wearablesManager.streamStateText)
+                    }
+
+                    Section("Activity Timeline") {
+                        let visibleEvents = timelineEvents.filter { !$0.isDeleted }
+                        if visibleEvents.isEmpty {
+                            Text("No activity events yet. End a segment to create one.")
+                                .foregroundStyle(.secondary)
+                        } else {
+                            ForEach(visibleEvents) { event in
+                                VStack(alignment: .leading, spacing: 4) {
+                                    HStack {
+                                        Text(event.label.displayName)
+                                            .font(.headline)
+                                        if event.needsReview {
+                                            Text("Needs Review")
+                                                .font(.caption)
+                                                .padding(.horizontal, 6)
+                                                .padding(.vertical, 2)
+                                                .background(.yellow.opacity(0.2))
+                                                .clipShape(Capsule())
+                                        }
+                                    }
+                                    Text(event.timestamp.formatted(date: .abbreviated, time: .standard))
+                                        .font(.subheadline)
+                                        .foregroundStyle(.secondary)
+                                    Text("Confidence: \(event.confidence.formatted(.number.precision(.fractionLength(2))))")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                    Text("Frames: \(event.frameCount.map(String.init) ?? "-")")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                    Text(event.rationaleShort)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                                .padding(.vertical, 2)
+                            }
+                        }
+                    }
+                }
+                .navigationTitle("Activities")
+            }
+            .tabItem {
+                Label("Activities", systemImage: "list.bullet.rectangle")
+            }
+            .tag(AppTab.activities)
+
+            NavigationStack {
+                Form {
+                    if let error = wearablesManager.lastError {
+                        Section {
+                            Text(error)
+                                .foregroundStyle(.red)
+                                .font(.footnote)
+                        }
+                    }
+
                     if !wearablesManager.isDeviceRegistered {
                         Section("Registration") {
                             Button("Register") {
@@ -52,6 +132,40 @@ struct ContentView: View {
                         }
                     }
 
+                    Section("Camera Stream") {
+                        Button("Start Stream") {
+                            Task {
+                                await wearablesManager.startCameraStream()
+                            }
+                        }
+                        .disabled(wearablesManager.isBusy || wearablesManager.hasActiveStreamSession)
+
+                        if wearablesManager.hasActiveStreamSession {
+                            HStack(alignment: .top, spacing: 8) {
+                                Image(systemName: "hand.tap.fill")
+                                    .foregroundStyle(.orange)
+                                Text("Tap once on the glasses touch pad to get ready.")
+                                    .font(.footnote.weight(.semibold))
+                                    .foregroundStyle(.primary)
+                            }
+                            .padding(10)
+                            .background(.orange.opacity(0.18))
+                            .clipShape(RoundedRectangle(cornerRadius: 10))
+                        }
+
+                        Button("Stop Stream") {
+                            Task {
+                                await wearablesManager.stopCameraStream()
+                            }
+                        }
+                        .disabled(wearablesManager.isBusy || !wearablesManager.hasActiveStreamSession)
+
+                        Button("Capture Photo") {
+                            wearablesManager.capturePhoto()
+                        }
+                        .disabled(wearablesManager.isBusy || !wearablesManager.isStreaming)
+                    }
+
                     Section("Wearables Status") {
                         statusRow("Registration", wearablesManager.registrationStateText)
                         statusRow("Camera Permission", wearablesManager.cameraPermissionText)
@@ -65,39 +179,6 @@ struct ContentView: View {
                         if let captureDate = wearablesManager.latestPhotoCaptureAt {
                             statusRow("Last Photo", captureDate.formatted(date: .abbreviated, time: .standard))
                         }
-
-                        if let error = wearablesManager.lastError {
-                            Text(error)
-                                .foregroundStyle(.red)
-                                .font(.footnote)
-                        }
-                    }
-
-                    Section("Camera Stream") {
-                        Button("Start Stream") {
-                            Task {
-                                await wearablesManager.startCameraStream()
-                            }
-                        }
-                        .disabled(wearablesManager.isBusy || wearablesManager.isStreaming)
-
-                        if wearablesManager.isStreaming || wearablesManager.streamStateText.lowercased() == "paused" {
-                            Text("Tap once on the glasses touch pad to get ready.")
-                                .font(.footnote)
-                                .foregroundStyle(.secondary)
-                        }
-
-                        Button("Stop Stream") {
-                            Task {
-                                await wearablesManager.stopCameraStream()
-                            }
-                        }
-                        .disabled(wearablesManager.isBusy || !wearablesManager.isStreaming)
-
-                        Button("Capture Photo") {
-                            wearablesManager.capturePhoto()
-                        }
-                        .disabled(wearablesManager.isBusy || !wearablesManager.isStreaming)
                     }
 
                     Section("Diagnostics") {
@@ -126,64 +207,8 @@ struct ContentView: View {
                 Label("Settings", systemImage: "gearshape")
             }
             .tag(AppTab.settings)
-
-            NavigationStack {
-                Form {
-                    Section("Status") {
-                        Text("Segment ingestion is active only on this tab.")
-                            .foregroundStyle(.secondary)
-                        statusRow("Stream State", wearablesManager.streamStateText)
-                        if let endedAt = wearablesManager.latestSegmentEndedAt {
-                            statusRow("Last Segment", endedAt.formatted(date: .abbreviated, time: .standard))
-                        }
-                        if wearablesManager.latestSegmentFrameCount > 0 {
-                            statusRow("Last Segment Frames", "\(wearablesManager.latestSegmentFrameCount)")
-                        }
-                    }
-
-                    Section("Activity Timeline") {
-                        let visibleEvents = timelineEvents.filter { !$0.isDeleted }
-                        if visibleEvents.isEmpty {
-                            Text("No activity events yet. End a segment to create one.")
-                                .foregroundStyle(.secondary)
-                        } else {
-                            ForEach(visibleEvents) { event in
-                                VStack(alignment: .leading, spacing: 4) {
-                                    HStack {
-                                        Text(event.label.displayName)
-                                            .font(.headline)
-                                        if event.needsReview {
-                                            Text("Needs Review")
-                                                .font(.caption)
-                                                .padding(.horizontal, 6)
-                                                .padding(.vertical, 2)
-                                                .background(.yellow.opacity(0.2))
-                                                .clipShape(Capsule())
-                                        }
-                                    }
-                                    Text(event.timestamp.formatted(date: .abbreviated, time: .standard))
-                                        .font(.subheadline)
-                                        .foregroundStyle(.secondary)
-                                    Text("Confidence: \(event.confidence.formatted(.number.precision(.fractionLength(2))))")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                    Text(event.rationaleShort)
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-                                .padding(.vertical, 2)
-                            }
-                        }
-                    }
-                }
-                .navigationTitle("Activities")
-            }
-            .tabItem {
-                Label("Activities", systemImage: "list.bullet.rectangle")
-            }
-            .tag(AppTab.activities)
         }
-        .onChange(of: selectedTab) { newValue in
+        .onChange(of: selectedTab) { _, newValue in
             wearablesManager.setActivitiesTabActive(newValue == .activities)
         }
         .task {

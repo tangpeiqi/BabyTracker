@@ -13,6 +13,7 @@ final class ActivityEventRecord {
     var isDeleted: Bool
     var rationaleShort: String
     var modelVersion: String
+    var frameCount: Int?
 
     init(
         id: UUID = UUID(),
@@ -24,7 +25,8 @@ final class ActivityEventRecord {
         isUserCorrected: Bool = false,
         isDeleted: Bool = false,
         rationaleShort: String,
-        modelVersion: String
+        modelVersion: String,
+        frameCount: Int? = nil
     ) {
         self.id = id
         self.labelRawValue = label.rawValue
@@ -36,6 +38,7 @@ final class ActivityEventRecord {
         self.isDeleted = isDeleted
         self.rationaleShort = rationaleShort
         self.modelVersion = modelVersion
+        self.frameCount = frameCount
     }
 
     var label: ActivityLabel {

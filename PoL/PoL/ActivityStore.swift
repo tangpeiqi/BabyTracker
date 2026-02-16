@@ -16,6 +16,7 @@ final class SwiftDataActivityStore: ActivityStore {
     }
 
     func saveEvent(from capture: CaptureEnvelope, inference: InferenceResult) throws {
+        let frameCount = capture.metadata["frameCount"].flatMap(Int.init)
         let event = ActivityEventRecord(
             label: inference.label,
             timestamp: capture.capturedAt,
@@ -23,7 +24,8 @@ final class SwiftDataActivityStore: ActivityStore {
             confidence: inference.confidence,
             needsReview: inference.confidence < confidenceThreshold,
             rationaleShort: inference.rationaleShort,
-            modelVersion: inference.modelVersion
+            modelVersion: inference.modelVersion,
+            frameCount: frameCount
         )
         modelContext.insert(event)
         try modelContext.save()

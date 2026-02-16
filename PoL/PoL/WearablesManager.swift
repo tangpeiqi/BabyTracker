@@ -96,6 +96,11 @@ final class WearablesManager: ObservableObject {
 
     func startRegistration() async {
         guard registrationStateText.lowercased() != "registering" else { return }
+        guard !isDeviceRegistered else {
+            lastError = nil
+            recordDebugEvent("start_registration_skipped", metadata: ["reason": "already_registered"])
+            return
+        }
         recordDebugEvent("start_registration_requested")
 
         isBusy = true
@@ -109,14 +114,17 @@ final class WearablesManager: ObservableObject {
         do {
             try await Wearables.shared.startRegistration()
             lastError = nil
-        } catch let error as RegistrationError {
-            lastError = "Failed to start registration: \(error.description)"
         } catch {
             lastError = formatError("Failed to start registration", error)
         }
     }
 
     func startUnregistration() async {
+        guard isDeviceRegistered else {
+            lastError = nil
+            recordDebugEvent("start_unregistration_skipped", metadata: ["reason": "not_registered"])
+            return
+        }
         recordDebugEvent("start_unregistration_requested")
         isBusy = true
         defer { isBusy = false }
@@ -129,8 +137,6 @@ final class WearablesManager: ObservableObject {
         do {
             try await Wearables.shared.startUnregistration()
             lastError = nil
-        } catch let error as UnregistrationError {
-            lastError = "Failed to start unregistration: \(error.description)"
         } catch {
             lastError = formatError("Failed to start unregistration", error)
         }
@@ -165,6 +171,13 @@ final class WearablesManager: ObservableObject {
     }
 
     func startCameraStream() async {
+        guard !hasActiveStreamSession else {
+            recordDebugEvent(
+                "start_stream_skipped",
+                metadata: ["reason": "session_already_active", "state": streamStateText]
+            )
+            return
+        }
         lastAppInitiatedSessionControlAt = Date()
         recordDebugEvent("start_stream_requested")
         isBusy = true
@@ -237,7 +250,31 @@ final class WearablesManager: ObservableObject {
     }
 
     var isDeviceRegistered: Bool {
-        registrationStateText.lowercased() == "registered"
+        let normalized = registrationStateText
+            .lowercased()
+            .replacingOccurrences(of: " ", with: "")
+        if normalized.contains("unregistered") || normalized.contains("notregistered") {
+            return false
+        }
+        if normalized.contains("registered") {
+            return true
+        }
+        // Fallback for SDK state strings that don't literally contain "registered".
+        return connectedDeviceCount > 0 || isCameraPermissionGranted
+    }
+
+    var hasActiveStreamSession: Bool {
+        let normalized = streamStateText
+            .lowercased()
+            .replacingOccurrences(of: " ", with: "")
+        if normalized.contains("stopped") || normalized.contains("stopping") {
+            return false
+        }
+        return normalized.contains("streaming")
+            || normalized.contains("paused")
+            || normalized.contains("starting")
+            || normalized.contains("waitingfordevice")
+            || normalized.contains("connecting")
     }
 
     private func observeWearablesState() {
@@ -540,15 +577,6 @@ final class WearablesManager: ObservableObject {
             return
         }
 
-        let wearablesMicGranted = await ensureWearablesMicrophonePermission()
-        guard wearablesMicGranted else {
-            recordDebugEvent(
-                "audio_start_skipped",
-                metadata: ["segmentId": segmentID.uuidString, "reason": "wearables_mic_permission_denied"]
-            )
-            return
-        }
-
         let iosMicGranted = await requestIOSMicrophonePermissionIfNeeded()
         guard iosMicGranted else {
             recordDebugEvent(
@@ -615,38 +643,39 @@ final class WearablesManager: ObservableObject {
         isPermissionGrantedText(String(describing: status))
     }
 
-    private func ensureWearablesMicrophonePermission() async -> Bool {
-        do {
-            let status = try await Wearables.shared.checkPermissionStatus(.microphone)
-            if isPermissionGranted(status) {
-                return true
-            }
-            let requested = try await Wearables.shared.requestPermission(.microphone)
-            return isPermissionGranted(requested)
-        } catch {
-            recordDebugEvent(
-                "wearables_mic_permission_error",
-                metadata: ["error": error.localizedDescription]
-            )
-            return false
-        }
-    }
-
     private func requestIOSMicrophonePermissionIfNeeded() async -> Bool {
-        let session = AVAudioSession.sharedInstance()
-        switch session.recordPermission {
-        case .granted:
-            return true
-        case .denied:
-            return false
-        case .undetermined:
-            return await withCheckedContinuation { continuation in
-                session.requestRecordPermission { granted in
-                    continuation.resume(returning: granted)
+        if #available(iOS 17.0, *) {
+            let permission = AVAudioApplication.shared.recordPermission
+            switch permission {
+            case .granted:
+                return true
+            case .denied:
+                return false
+            case .undetermined:
+                return await withCheckedContinuation { continuation in
+                    AVAudioApplication.requestRecordPermission(completionHandler: { granted in
+                        continuation.resume(returning: granted)
+                    })
                 }
+            @unknown default:
+                return false
             }
-        @unknown default:
-            return false
+        } else {
+            let session = AVAudioSession.sharedInstance()
+            switch session.recordPermission {
+            case .granted:
+                return true
+            case .denied:
+                return false
+            case .undetermined:
+                return await withCheckedContinuation { continuation in
+                    session.requestRecordPermission { granted in
+                        continuation.resume(returning: granted)
+                    }
+                }
+            @unknown default:
+                return false
+            }
         }
     }
 

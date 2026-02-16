@@ -40,7 +40,11 @@ final class AudioSegmentRecorder {
         ]
 
         let audioSession = AVAudioSession.sharedInstance()
-        try audioSession.setCategory(.playAndRecord, mode: .default, options: [.allowBluetooth])
+        try audioSession.setCategory(
+            .playAndRecord,
+            mode: .default,
+            options: [.allowBluetoothHFP, .mixWithOthers]
+        )
         try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
 
         let recorder = try AVAudioRecorder(url: audioURL, settings: settings)

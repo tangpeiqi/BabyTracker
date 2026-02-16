@@ -7,10 +7,18 @@
 
 import SwiftUI
 import SwiftData
+import UIKit
 
 @main
 struct PoLApp: App {
     @StateObject private var wearablesManager = WearablesManager()
+
+    init() {
+        let tabBarAppearance = UITabBar.appearance()
+        tabBarAppearance.itemPositioning = .fill
+        tabBarAppearance.itemWidth = 0
+        tabBarAppearance.itemSpacing = 0
+    }
 
     var body: some Scene {
         WindowGroup {
