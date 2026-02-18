@@ -31,6 +31,10 @@
 	</array>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>GEMINI_API_KEY</key>
+	<string>AIzaSyBr68mTkjCo4UFg4aJutICGyQi5xzPNn2o</string>
+	<key>GEMINI_MODEL</key>
+	<string>gemini-2.0-flash</string>
 	<key>LSApplicationQueriesSchemes</key>
 	<array>
 		<string>fb-viewapp</string>
@@ -46,10 +50,6 @@
 		<key>TeamID</key>
 		<string>$(DEVELOPMENT_TEAM)</string>
 	</dict>
-	<key>GEMINI_API_KEY</key>
-	<string></string>
-	<key>GEMINI_MODEL</key>
-	<string>gemini-2.0-flash</string>
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>Needed to connect to Meta Wearables</string>
 	<key>NSMicrophoneUsageDescription</key>

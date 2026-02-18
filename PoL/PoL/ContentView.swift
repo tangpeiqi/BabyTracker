@@ -46,6 +46,19 @@ struct ContentView: View {
                 Form {
                     Section {
                         statusRow("Stream State", wearablesManager.streamStateText)
+
+                        if wearablesManager.hasActiveStreamSession {
+                            HStack(alignment: .top, spacing: 8) {
+                                Image(systemName: "hand.tap.fill")
+                                    .foregroundStyle(.blue)
+                                Text("Tap once on the glasses touch pad when you are ready to log the activity, tap again to finish logging.")
+                                    .font(.footnote.weight(.semibold))
+                                    .foregroundStyle(.primary)
+                            }
+                            .padding(10)
+                            .background(.blue.opacity(0.18))
+                            .clipShape(RoundedRectangle(cornerRadius: 10))
+                        }
                     }
 
                     Section("Activity Timeline") {
@@ -144,7 +157,7 @@ struct ContentView: View {
                             HStack(alignment: .top, spacing: 8) {
                                 Image(systemName: "hand.tap.fill")
                                     .foregroundStyle(.orange)
-                                Text("Tap once on the glasses touch pad to get ready.")
+                                Text("To get ready for the experience, tap once on the glasses touch pad to pause the streaming, then switch to the Activities tab.")
                                     .font(.footnote.weight(.semibold))
                                     .foregroundStyle(.primary)
                             }

@@ -16,7 +16,7 @@ final class ActivityPipeline {
         self.maxInferenceAttempts = max(1, maxInferenceAttempts)
     }
 
-    func processPhotoCapture(photoData: Data, capturedAt: Date) async throws {
+    func processPhotoCapture(photoData: Data, capturedAt: Date) async throws -> InferenceResult {
         let fileURL = try persistCaptureData(photoData, ext: "jpg")
         let capture = CaptureEnvelope(
             id: UUID(),
@@ -28,9 +28,14 @@ final class ActivityPipeline {
         )
         let inference = try await inferWithRetry(from: capture)
         try store.saveEvent(from: capture, inference: inference)
+        return inference
     }
 
-    func processVideoSegment(manifestURL: URL, capturedAt: Date, metadata: [String: String]) async throws {
+    func processVideoSegment(
+        manifestURL: URL,
+        capturedAt: Date,
+        metadata: [String: String]
+    ) async throws -> InferenceResult {
         let capture = CaptureEnvelope(
             id: UUID(),
             captureType: .shortVideo,
@@ -41,6 +46,7 @@ final class ActivityPipeline {
         )
         let inference = try await inferWithRetry(from: capture)
         try store.saveEvent(from: capture, inference: inference)
+        return inference
     }
 
     private func persistCaptureData(_ data: Data, ext: String) throws -> URL {

@@ -48,6 +48,7 @@ final class WearablesManager: ObservableObject {
     private let debugEventLimit: Int = 60
     private let segmentRecorder = LocalVideoSegmentRecorder()
     private let audioRecorder = AudioSegmentRecorder()
+    private let speechSynthesizer = AVSpeechSynthesizer()
 
     init(autoConfigure: Bool = true) {
         configSummary = readMWDATConfigSummary()
@@ -429,7 +430,7 @@ final class WearablesManager: ObservableObject {
                 }
 
                 do {
-                    try await pipeline.processPhotoCapture(photoData: photoData.data, capturedAt: capturedAt)
+                    _ = try await pipeline.processPhotoCapture(photoData: photoData.data, capturedAt: capturedAt)
                     self.lastError = nil
                     self.recordDebugEvent("photo_pipeline_success")
                 } catch {
@@ -549,7 +550,7 @@ final class WearablesManager: ObservableObject {
                 }
 
                 do {
-                    try await pipeline.processVideoSegment(
+                    let inference = try await pipeline.processVideoSegment(
                         manifestURL: persisted.manifestURL,
                         capturedAt: persisted.endedAt,
                         metadata: [
@@ -567,6 +568,7 @@ final class WearablesManager: ObservableObject {
                             "captureType": "shortVideo"
                         ]
                     )
+                    announceActivityLogged(inference: inference)
                 } catch {
                     lastError = formatError("Failed to process ended segment", error)
                     recordDebugEvent(
@@ -739,6 +741,62 @@ final class WearablesManager: ObservableObject {
     private func formatError(_ prefix: String, _ error: Error) -> String {
         let nsError = error as NSError
         return "\(prefix): \(error.localizedDescription) [\(nsError.domain):\(nsError.code)]"
+    }
+
+    private func announceActivityLogged(inference: InferenceResult) {
+        let utterance = AVSpeechUtterance(string: spokenLabel(for: inference.label))
+        utterance.rate = 0.48
+        utterance.pitchMultiplier = 1.0
+        utterance.volume = 1.0
+
+        do {
+            let audioSession = AVAudioSession.sharedInstance()
+            try audioSession.setCategory(
+                .playAndRecord,
+                mode: .default,
+                options: [.allowBluetoothHFP, .allowBluetoothA2DP, .mixWithOthers]
+            )
+            try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
+
+            if speechSynthesizer.isSpeaking {
+                speechSynthesizer.stopSpeaking(at: .immediate)
+            }
+            speechSynthesizer.speak(utterance)
+
+            let outputRoute = audioSession.currentRoute.outputs.first?.portType.rawValue ?? "unknown"
+            recordDebugEvent(
+                "activity_feedback_spoken",
+                metadata: [
+                    "label": inference.label.rawValue,
+                    "route": outputRoute
+                ]
+            )
+        } catch {
+            recordDebugEvent(
+                "activity_feedback_error",
+                metadata: [
+                    "label": inference.label.rawValue,
+                    "error": error.localizedDescription
+                ]
+            )
+        }
+    }
+
+    private func spokenLabel(for label: ActivityLabel) -> String {
+        switch label {
+        case .diaperWet:
+            return "Activity logged: diaper change, wet."
+        case .diaperBowel:
+            return "Activity logged: diaper change, bowel movement."
+        case .feeding:
+            return "Activity logged: feeding."
+        case .sleepStart:
+            return "Activity logged: baby asleep."
+        case .wakeUp:
+            return "Activity logged: baby woke up."
+        case .other:
+            return "Activity logged: other."
+        }
     }
 
     private func configureWearables() {
