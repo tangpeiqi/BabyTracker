@@ -1,5 +1,8 @@
 Integration overview
-Updated: Feb 3, 2026
+Updated: Feb 19, 2026
+
+You can also reference this website: https://deepwiki.com/facebook/meta-wearables-dat-ios
+
 Overview
 The Wearables Device Access Toolkit lets your mobile app integrate with supported AI glasses. An integration establishes a session with the device so your app can access supported sensors on the user’s glasses. Users start a session from your app, and then interact through their glasses. They can:
 Speak to your app through the device’s microphones

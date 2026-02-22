@@ -60,6 +60,12 @@ struct ContentView: View {
                             .padding(10)
                             .background(.blue.opacity(0.18))
                             .clipShape(RoundedRectangle(cornerRadius: 10))
+
+                            Button("Cancel Session (Discard Capture)", role: .destructive) {
+                                Task {
+                                    await wearablesManager.cancelCurrentSession()
+                                }
+                            }
                         }
                     }
 

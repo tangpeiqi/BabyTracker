@@ -45,6 +45,7 @@ final class WearablesManager: ObservableObject {
     private var lastVideoFrameLogAt: Date?
     private var activeSegmentID: UUID?
     private var activeSegmentStartedAt: Date?
+    private var cancelledSegmentIDs: Set<UUID> = []
     private let debugEventLimit: Int = 60
     private let segmentRecorder = LocalVideoSegmentRecorder()
     private let audioRecorder = AudioSegmentRecorder()
@@ -265,6 +266,27 @@ final class WearablesManager: ObservableObject {
         )
     }
 
+    func cancelCurrentSession() async {
+        let cancelledSegmentID = activeSegmentID
+        if let cancelledSegmentID {
+            cancelledSegmentIDs.insert(cancelledSegmentID)
+            activeSegmentID = nil
+            activeSegmentStartedAt = nil
+            audioRecorder.discardActiveSegment()
+            await segmentRecorder.discardActiveSegment()
+            recordDebugEvent(
+                "segment_cancel_requested",
+                metadata: ["segmentId": cancelledSegmentID.uuidString]
+            )
+        } else {
+            recordDebugEvent("segment_cancel_requested", metadata: ["segmentId": "<none>"])
+        }
+
+        if streamSession != nil {
+            await stopCameraStream()
+        }
+    }
+
     var isCameraPermissionGranted: Bool {
         isPermissionGrantedText(cameraPermissionText)
     }
@@ -295,6 +317,10 @@ final class WearablesManager: ObservableObject {
             || normalized.contains("starting")
             || normalized.contains("waitingfordevice")
             || normalized.contains("connecting")
+    }
+
+    var hasActiveSegmentCapture: Bool {
+        activeSegmentID != nil
     }
 
     private func observeWearablesState() {
@@ -527,6 +553,16 @@ final class WearablesManager: ObservableObject {
                 latestSegmentEndedAt = persisted.endedAt
                 latestSegmentFrameCount = persisted.frameCount
                 let elapsed = startedAt.map { endedAt.timeIntervalSince($0) } ?? 0
+
+                if cancelledSegmentIDs.remove(segmentID) != nil {
+                    try? FileManager.default.removeItem(at: persisted.manifestURL.deletingLastPathComponent())
+                    recordDebugEvent(
+                        "segment_discarded_after_cancel",
+                        metadata: ["segmentId": segmentID.uuidString]
+                    )
+                    return
+                }
+
                 recordDebugEvent(
                     "segment_saved",
                     metadata: [
